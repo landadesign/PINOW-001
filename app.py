@@ -8,6 +8,11 @@ import numpy as np
 import zipfile
 import os
 from pathlib import Path
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
 
 # ページ設定
 st.set_page_config(
@@ -292,6 +297,81 @@ def create_zip_file(images_dict):
             )
     return zip_buffer.getvalue()
 
+def create_expense_report_pdf(df, name):
+    # PDFバッファの作成
+    buffer = io.BytesIO()
+    
+    # A4サイズの設定
+    width, height = A4
+    
+    # PDFキャンバスの作成
+    c = canvas.Canvas(buffer, pagesize=A4)
+    
+    # フォントの設定
+    c.setFont('Helvetica', 12)
+    
+    # タイトルの描画
+    c.setFont('Helvetica-Bold', 24)
+    c.drawString(30*mm, 270*mm, f"{name}様 1月 交通費清算書")
+    
+    # ヘッダーの描画
+    headers = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
+    col_widths = [25*mm, 70*mm, 20*mm, 25*mm, 25*mm, 25*mm]
+    x_positions = [30*mm]
+    for width in col_widths[:-1]:
+        x_positions.append(x_positions[-1] + width)
+    
+    # ヘッダー背景
+    c.setFillColorRGB(0.95, 0.95, 0.95)
+    c.rect(30*mm, 250*mm, sum(col_widths), 10*mm, fill=1)
+    
+    # ヘッダーテキスト
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont('Helvetica-Bold', 10)
+    for header, x in zip(headers, x_positions):
+        c.drawString(x + 2*mm, 252*mm, header)
+    
+    # データの描画
+    c.setFont('Helvetica', 10)
+    y_position = 240*mm
+    for _, row in df.iterrows():
+        # 罫線
+        c.rect(30*mm, y_position - 8*mm, sum(col_widths), 10*mm)
+        for x, width in zip(x_positions, col_widths):
+            c.line(x, y_position - 8*mm, x, y_position + 2*mm)
+        
+        # データ
+        values = [
+            str(row['日付']),
+            str(row['経路']),
+            str(row['距離(km)']),
+            str(row['交通費(円)']),
+            str(row['手当(円)']),
+            str(row['合計(円)'])
+        ]
+        
+        for value, x, width in zip(values, x_positions, col_widths):
+            if len(value) > 30:  # 経路が長い場合は2行に分割
+                parts = value.split('→')
+                mid = len(parts) // 2
+                line1 = '→'.join(parts[:mid])
+                line2 = '→'.join(parts[mid:])
+                c.drawString(x + 2*mm, y_position - 2*mm, line1)
+                c.drawString(x + 2*mm, y_position - 6*mm, line2)
+            else:
+                c.drawString(x + 2*mm, y_position - 4*mm, value)
+        
+        y_position -= 10*mm
+    
+    # 注釈の描画
+    c.setFont('Helvetica', 10)
+    c.drawString(30*mm, 30*mm, "※2025年1月分給与にて清算しました。")
+    
+    # PDFの保存
+    c.save()
+    buffer.seek(0)
+    return buffer.getvalue()
+
 def main():
     st.title("PINO精算アプリケーション")
     
@@ -308,70 +388,24 @@ def main():
         df = st.session_state['expense_data']
         unique_names = df['name'].unique().tolist()
         
-        # 画像変換ボタンを2列で配置
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("個別画像としてダウンロード", type="primary"):
-                st.write("### 個別ダウンロード")
-                images_dict = {}
-                for name in unique_names:
-                    person_data = df[df['name'] == name]
-                    start_date = person_data['date'].iloc[0]
-                    if start_date != '合計':
-                        styled_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
-                        styled_df.columns = ['日付', '経路', '合計距離(km)', '交通費（距離×15P）(円)', '運転手当(円)', '合計(円)']
-                        formatted_df = styled_df.copy()
-                        for col in styled_df.columns:
-                            if col != '経路' and col != '日付':
-                                formatted_df[col] = styled_df[col].apply(format_number)
-                        img_bytes = create_expense_table_image(formatted_df, name, start_date)
-                        st.download_button(
-                            label=f"{name}様の精算書をダウンロード",
-                            data=img_bytes,
-                            file_name=f"精算書_{name}_{datetime.now().strftime('%Y%m%d')}.png",
-                            mime="image/png",
-                            key=f"download_{name}"
-                        )
-        
-        with col2:
-            if st.button("一括ZIPでダウンロード", type="primary"):
-                images_dict = {}
-                for name in unique_names:
-                    person_data = df[df['name'] == name]
-                    start_date = person_data['date'].iloc[0]
-                    if start_date != '合計':
-                        styled_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
-                        styled_df.columns = ['日付', '経路', '合計距離(km)', '交通費（距離×15P）(円)', '運転手当(円)', '合計(円)']
-                        formatted_df = styled_df.copy()
-                        for col in styled_df.columns:
-                            if col != '経路' and col != '日付':
-                                formatted_df[col] = styled_df[col].apply(format_number)
-                        images_dict[name] = create_expense_table_image(formatted_df, name, start_date)
-                
-                zip_bytes = create_zip_file(images_dict)
-                st.download_button(
-                    label="全ての精算書をZIPでダウンロード",
-                    data=zip_bytes,
-                    file_name=f"精算書一括_{datetime.now().strftime('%Y%m%d')}.zip",
-                    mime="application/zip"
-                )
-        
-        # タブ表示
-        tabs = st.tabs(unique_names)
-        for idx, name in enumerate(unique_names):
-            with tabs[idx]:
-                person_data = df[df['name'] == name]
+        # ダウンロードボタン
+        if st.button("精算書をダウンロード", type="primary"):
+            for name in unique_names:
+                person_data = df[df['name'] == name].copy()
                 if len(person_data) > 0:
-                    st.write(f"### {name}様　1月　交通費清算書")
                     styled_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
-                    styled_df.columns = ['日付', '経路', '合計距離(km)', '交通費（距離×15P）(円)', '運転手当(円)', '合計(円)']
-                    formatted_df = styled_df.copy()
-                    for col in styled_df.columns:
-                        if col != '経路' and col != '日付':
-                            formatted_df[col] = styled_df[col].apply(format_number)
-                    st.table(formatted_df)
-                    st.write("※2025年1月分給与にて清算しました。")
+                    styled_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
+                    
+                    # PDF生成
+                    pdf_bytes = create_expense_report_pdf(styled_df, name)
+                    
+                    # ダウンロードボタン
+                    st.download_button(
+                        label=f"{name}様の清算書",
+                        data=pdf_bytes,
+                        file_name=f"清算書_{name}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf"
+                    )
 
 if __name__ == "__main__":
     main()
