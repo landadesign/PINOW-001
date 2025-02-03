@@ -86,18 +86,20 @@ def parse_expense_data(text):
         # 各行を解析
         current_name = None
         for line in lines:
-            # 名前の行を検出
-            if '様' in line:
-                current_name = line.replace('様', '').strip()
+            # 名前の行を検出（「様」または「さん」を含む行）
+            if 'さん' in line or '様' in line:
+                current_name = line.replace('さん', '').replace('様', '').strip()
                 continue
             
-            # データ行を解析
+            # 日付と経路のパターンを検出
+            # 例: "1/6 LA→新宿" や "1/6  LA→新宿" など
             match = re.match(r'(\d{1,2}/\d{1,2})\s+(.+)', line)
             if match and current_name:
                 date, route = match.groups()
                 
-                # 距離を計算（仮の実装）
-                distance = len(route.split('→')) * 5.0  # 仮の距離計算
+                # 経路から距離を計算
+                route_points = [p.strip() for p in route.split('→') if p.strip()]
+                distance = (len(route_points) - 1) * 5.0  # 経由地点間を5kmと仮定
                 
                 # 交通費と手当を計算
                 transportation_fee = distance * RATE_PER_KM
@@ -119,11 +121,11 @@ def parse_expense_data(text):
             df = pd.DataFrame(data)
             return df
         else:
-            st.error("有効なデータが見つかりませんでした。")
+            st.error("有効なデータが見つかりませんでした。以下の形式で入力してください：\n\n例：\n山田様\n1/6 LA→新宿\n1/10 LA→渋谷→新宿")
             return None
             
     except Exception as e:
-        st.error(f"データの解析中にエラーが発生しました: {str(e)}")
+        st.error(f"データの解析中にエラーが発生しました: {str(e)}\n\n正しい形式で入力されているか確認してください。")
         return None
 
 def format_number(val):
