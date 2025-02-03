@@ -16,17 +16,13 @@ from reportlab.lib.units import mm
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 
-# ページ設定
+# ページ設定とスタイルの追加
 st.set_page_config(
     page_title="PINO精算アプリケーション",
     layout="wide"
 )
 
-# 定数
-RATE_PER_KM = 15
-DAILY_ALLOWANCE = 200
-
-# スタイル
+# カスタムCSS
 st.markdown("""
     <style>
     .main {
@@ -35,7 +31,7 @@ st.markdown("""
     .stTextArea textarea {
         font-size: 16px;
     }
-    .expense-table {
+    .stDataFrame {
         font-size: 14px;
     }
     .stButton>button {
@@ -45,15 +41,6 @@ st.markdown("""
         padding: 8px 16px;
         border: none;
         border-radius: 4px;
-    }
-    .expense-table th {
-        text-align: center !important;
-    }
-    .expense-table td {
-        text-align: right !important;
-    }
-    .expense-table td:nth-child(2) {
-        text-align: left !important;
     }
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
@@ -66,8 +53,26 @@ st.markdown("""
         background-color: #4CAF50 !important;
         color: white !important;
     }
+    div[data-testid="stDataFrameResizable"] {
+        width: 100%;
+        margin: 0 auto;
+    }
+    div[data-testid="stDataFrameResizable"] table {
+        width: 100% !important;
+    }
+    div[data-testid="stDataFrameResizable"] td {
+        text-align: right;
+        padding: 8px;
+    }
+    div[data-testid="stDataFrameResizable"] td:nth-child(2) {
+        text-align: left;
+    }
     </style>
 """, unsafe_allow_html=True)
+
+# 定数
+RATE_PER_KM = 15
+DAILY_ALLOWANCE = 200
 
 def parse_expense_data(text):
     """テキストデータを解析してDataFrameに変換"""
