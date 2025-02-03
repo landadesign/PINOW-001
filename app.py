@@ -178,10 +178,10 @@ def main():
                         display_rows.append({
                             '日付': row['date'],
                             '経路': route_data['route'],
-                            '合計距離(km)': row['total_distance'],
-                            '交通費（距離×15P）(円)': row['transportation_fee'],
-                            '運転手当(円)': row['allowance'],
-                            '合計(円)': row['total']
+                            '合計距離(km)': row['total_distance'] if route_data == row['routes'][0] else '',
+                            '交通費（距離×15P）(円)': row['transportation_fee'] if route_data == row['routes'][0] else '',
+                            '運転手当(円)': row['allowance'] if route_data == row['routes'][0] else '',
+                            '合計(円)': row['total'] if route_data == row['routes'][0] else ''
                         })
                 
                 display_df = pd.DataFrame(display_rows)
@@ -197,13 +197,18 @@ def main():
                 }])
                 display_df = pd.concat([display_df, totals])
                 
+                # 数値列を適切な型に変換
+                numeric_columns = ['合計距離(km)', '交通費（距離×15P）(円)', '運転手当(円)', '合計(円)']
+                for col in numeric_columns:
+                    display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
+                
                 # データフレーム表示
                 st.dataframe(
                     display_df.style.format({
-                        '合計距離(km)': '{:.1f}',
-                        '交通費（距離×15P）(円)': '{:,.0f}',
-                        '運転手当(円)': '{:,.0f}',
-                        '合計(円)': '{:,.0f}'
+                        '合計距離(km)': lambda x: f'{x:.1f}' if pd.notnull(x) else '',
+                        '交通費（距離×15P）(円)': lambda x: f'{int(x):,}' if pd.notnull(x) else '',
+                        '運転手当(円)': lambda x: f'{int(x):,}' if pd.notnull(x) else '',
+                        '合計(円)': lambda x: f'{int(x):,}' if pd.notnull(x) else ''
                     }),
                     use_container_width=True,
                     hide_index=True
