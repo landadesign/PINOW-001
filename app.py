@@ -399,7 +399,6 @@ def main():
         df = st.session_state['expense_data']
         unique_names = df['name'].unique().tolist()
         
-        # タブの作成
         tabs = st.tabs(unique_names)
         
         for i, name in enumerate(unique_names):
@@ -409,13 +408,13 @@ def main():
                     styled_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
                     styled_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
                     
-                    # 数値のフォーマット
+                    # 数値フォーマット
                     styled_df['距離(km)'] = styled_df['距離(km)'].map('{:.1f}'.format)
                     styled_df['交通費(円)'] = styled_df['交通費(円)'].map('{:,.0f}'.format)
                     styled_df['手当(円)'] = styled_df['手当(円)'].map('{:,.0f}'.format)
                     styled_df['合計(円)'] = styled_df['合計(円)'].map('{:,.0f}'.format)
                     
-                    # データフレームの表示
+                    # データ表示
                     st.markdown(f"### {name}様の精算データ")
                     st.dataframe(
                         styled_df,
@@ -423,11 +422,11 @@ def main():
                         hide_index=True
                     )
                     
-                    # Excel用のデータフレームを準備（数値型を保持）
+                    # Excel用データ準備
                     excel_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
                     excel_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
                     
-                    # Excel生成とダウンロードボタン
+                    # Excelダウンロード
                     excel_data = create_expense_excel(excel_df, name)
                     st.download_button(
                         label=f"{name}様の清算書をダウンロード",
