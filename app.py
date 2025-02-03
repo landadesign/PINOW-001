@@ -129,9 +129,42 @@ def main():
     # データ表示と精算書生成
     if 'expense_data' in st.session_state:
         df = st.session_state['expense_data']
-        unique_names = df['name'].unique().tolist()
         
-        # タブ作成
+        # 全体サマリーの表示
+        st.markdown("### 精算サマリー")
+        summary_df = df.groupby('name').agg({
+            'total_distance': 'sum',
+            'transportation_fee': 'sum',
+            'allowance': 'sum',
+            'total': 'sum'
+        }).reset_index()
+        
+        summary_df.columns = ['担当者', '総距離(km)', '総交通費(円)', '総手当(円)', '総合計(円)']
+        
+        # 全体の合計行を追加
+        total_row = pd.DataFrame([{
+            '担当者': '全体合計',
+            '総距離(km)': summary_df['総距離(km)'].sum(),
+            '総交通費(円)': summary_df['総交通費(円)'].sum(),
+            '総手当(円)': summary_df['総手当(円)'].sum(),
+            '総合計(円)': summary_df['総合計(円)'].sum()
+        }])
+        summary_df = pd.concat([summary_df, total_row])
+        
+        st.dataframe(
+            summary_df.style.format({
+                '総距離(km)': '{:.1f}',
+                '総交通費(円)': '{:,.0f}',
+                '総手当(円)': '{:,.0f}',
+                '総合計(円)': '{:,.0f}'
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # 個人別の詳細表示
+        st.markdown("### 個人別精算詳細")
+        unique_names = df['name'].unique().tolist()
         tabs = st.tabs(unique_names)
         
         for i, name in enumerate(unique_names):
@@ -139,7 +172,7 @@ def main():
                 person_data = df[df['name'] == name].copy()
                 
                 # データ表示
-                st.markdown(f"### {name}様の精算データ")
+                st.markdown(f"#### {name}様の精算データ")
                 
                 display_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
                 display_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
