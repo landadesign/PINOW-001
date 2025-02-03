@@ -188,39 +188,32 @@ def format_number(val):
     return val
 
 def create_expense_table_image(df, name, start_date):
-    # フォントファイルのパスを設定
-    font_path = Path(__file__).parent / "fonts" / "NotoSansJP-Regular.ttf"
-    
     # フォントとサイズの設定
-    title_font_size = 40
-    header_font_size = 24
-    content_font_size = 20
-    padding = 60
-    row_height = 65
-    col_widths = [100, 520, 120, 140, 120, 120]
+    title_font_size = 48  # さらに大きく
+    header_font_size = 32
+    content_font_size = 24
+    padding = 80
+    row_height = 80
+    col_widths = [120, 600, 140, 160, 140, 140]  # 列幅をさらに広く
     
-    # 画像サイズ設定
+    # 画像サイズを大きくして高解像度に対応
     width = sum(col_widths) + padding * 2
     height = (len(df) + 3) * row_height + padding * 3
     
-    # 画像の作成（サイズを2倍に）
-    scale_factor = 2
+    # 画像の作成（サイズを3倍に）
+    scale_factor = 3
     img = Image.new('RGB', (int(width * scale_factor), int(height * scale_factor)), 'white')
     draw = ImageDraw.Draw(img)
     
-    # フォント読み込み
-    try:
-        title_font = ImageFont.truetype(str(font_path), int(title_font_size * scale_factor))
-        header_font = ImageFont.truetype(str(font_path), int(header_font_size * scale_factor))
-        content_font = ImageFont.truetype(str(font_path), int(content_font_size * scale_factor))
-    except Exception as e:
-        st.error(f"フォントの読み込みに失敗しました: {e}")
-        return None
+    # デフォルトフォントを使用
+    title_font = ImageFont.load_default()
+    header_font = ImageFont.load_default()
+    content_font = ImageFont.load_default()
     
     def scale(x): return int(x * scale_factor)
     
     # タイトルの描画
-    title = f"{name}様　1月　交通費清算書"
+    title = f"{name}様 1月 交通費清算書"
     draw.text((scale(padding), scale(padding)), title, fill='black', font=title_font)
     
     # ヘッダーの描画
@@ -231,13 +224,15 @@ def create_expense_table_image(df, name, start_date):
     # ヘッダー背景
     for header, width in zip(headers, col_widths):
         draw.rectangle([x, y, x + scale(width), y + scale(row_height)], 
-                      fill='#f5f5f5', outline='#666666', width=3)
+                      fill='#f5f5f5', outline='#666666', width=4)
         
         lines = header.split('\n')
         for i, line in enumerate(lines):
-            text_width = header_font.getlength(line)
+            # デフォルトフォントではgetlengthが使えないため、
+            # 文字数に基づいて位置を計算
+            text_width = len(line) * scale(header_font_size/2)
             text_x = x + (scale(width) - text_width) / 2
-            text_y = y + scale(5) + (i * scale(row_height - 10) / len(lines))
+            text_y = y + scale(10) + (i * scale(row_height - 20) / len(lines))
             draw.text((text_x, text_y), line, fill='black', font=header_font)
         x += scale(width)
     
@@ -247,7 +242,7 @@ def create_expense_table_image(df, name, start_date):
         x = scale(padding)
         for col_idx, (value, width) in enumerate(zip(row, col_widths)):
             draw.rectangle([x, y, x + scale(width), y + scale(row_height)], 
-                         outline='#666666', width=3)
+                         outline='#666666', width=4)
             
             text = str(value) if pd.notna(value) else ''
             
@@ -258,17 +253,18 @@ def create_expense_table_image(df, name, start_date):
                     line1 = '→'.join(words[:mid_point]) + '→'
                     line2 = '→'.join(words[mid_point:])
                     
-                    draw.text((x + scale(10), y + scale(5)), line1, 
+                    draw.text((x + scale(15), y + scale(10)), line1, 
                              fill='black', font=content_font)
-                    draw.text((x + scale(10), y + scale(row_height/2)), line2, 
+                    draw.text((x + scale(15), y + scale(row_height/2)), line2, 
                              fill='black', font=content_font)
                 else:
                     text_y = y + scale(row_height/2 - content_font_size/2)
-                    draw.text((x + scale(10), text_y), text, 
+                    draw.text((x + scale(15), text_y), text, 
                              fill='black', font=content_font)
             else:
-                text_width = content_font.getlength(text)
-                text_x = x + scale(width) - text_width - scale(10)
+                # 数値列は右寄せ（デフォルトフォントの場合）
+                text_width = len(text) * scale(content_font_size/2)
+                text_x = x + scale(width) - text_width - scale(15)
                 text_y = y + scale(row_height/2 - content_font_size/2)
                 draw.text((text_x, text_y), text, fill='black', font=content_font)
             x += scale(width)
