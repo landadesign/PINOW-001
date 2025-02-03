@@ -6,6 +6,8 @@ import io
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import zipfile
+import os
+from pathlib import Path
 
 # ページ設定
 st.set_page_config(
@@ -186,6 +188,9 @@ def format_number(val):
     return val
 
 def create_expense_table_image(df, name, start_date):
+    # フォントファイルのパスを設定
+    font_path = Path(__file__).parent / "fonts" / "NotoSansJP-Regular.ttf"
+    
     # フォントとサイズの設定
     title_font_size = 40
     header_font_size = 24
@@ -194,38 +199,23 @@ def create_expense_table_image(df, name, start_date):
     row_height = 65
     col_widths = [100, 520, 120, 140, 120, 120]
     
-    # 画像サイズを大きくして高解像度に対応
+    # 画像サイズ設定
     width = sum(col_widths) + padding * 2
     height = (len(df) + 3) * row_height + padding * 3
     
-    # 画像の作成（サイズを2.5倍に）
-    scale_factor = 2.5
+    # 画像の作成（サイズを2倍に）
+    scale_factor = 2
     img = Image.new('RGB', (int(width * scale_factor), int(height * scale_factor)), 'white')
     draw = ImageDraw.Draw(img)
     
-    # フォントの設定（Windowsのデフォルトフォントパスを優先）
-    font_paths = [
-        'C:\\Windows\\Fonts\\yugothm.ttc',  # Windows Yu Gothic UI
-        'C:\\Windows\\Fonts\\msgothic.ttc',  # MS Gothic
-        '/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc',  # macOS
-        '/usr/share/fonts/truetype/fonts-japanese-gothic.ttf',  # Linux
-    ]
-    
-    title_font = None
-    header_font = None
-    content_font = None
-    
-    for font_path in font_paths:
-        try:
-            title_font = ImageFont.truetype(font_path, int(title_font_size * scale_factor))
-            header_font = ImageFont.truetype(font_path, int(header_font_size * scale_factor))
-            content_font = ImageFont.truetype(font_path, int(content_font_size * scale_factor))
-            break
-        except:
-            continue
-    
-    if title_font is None:
-        title_font = header_font = content_font = ImageFont.load_default()
+    # フォント読み込み
+    try:
+        title_font = ImageFont.truetype(str(font_path), int(title_font_size * scale_factor))
+        header_font = ImageFont.truetype(str(font_path), int(header_font_size * scale_factor))
+        content_font = ImageFont.truetype(str(font_path), int(content_font_size * scale_factor))
+    except Exception as e:
+        st.error(f"フォントの読み込みに失敗しました: {e}")
+        return None
     
     def scale(x): return int(x * scale_factor)
     
