@@ -388,6 +388,37 @@ def main():
         df = st.session_state['expense_data']
         unique_names = df['name'].unique().tolist()
         
+        # タブの作成
+        tabs = st.tabs(unique_names)
+        
+        for i, name in enumerate(unique_names):
+            with tabs[i]:
+                person_data = df[df['name'] == name].copy()
+                if len(person_data) > 0:
+                    styled_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
+                    styled_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
+                    
+                    # データフレームの表示
+                    st.markdown(f"### {name}様の精算データ")
+                    st.dataframe(
+                        styled_df.style
+                        .format({
+                            '距離(km)': '{:.1f}',
+                            '交通費(円)': '{:.0f}',
+                            '手当(円)': '{:.0f}',
+                            '合計(円)': '{:.0f}'
+                        })
+                        .set_properties(**{
+                            'text-align': 'right',
+                            'font-size': '14px',
+                            'padding': '5px'
+                        })
+                        .set_properties(subset=['経路'], **{
+                            'text-align': 'left'
+                        }),
+                        use_container_width=True
+                    )
+        
         # ダウンロードボタン
         if st.button("精算書をダウンロード", type="primary"):
             for name in unique_names:
