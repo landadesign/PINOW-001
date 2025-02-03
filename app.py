@@ -399,30 +399,79 @@ def main():
         df = st.session_state['expense_data']
         unique_names = df['name'].unique().tolist()
         
-        tabs = st.tabs(unique_names)
+        # 1. チェック用の精算書表示
+        st.markdown("### 精算チェック")
+        check_tabs = st.tabs(["全体表示"] + unique_names)
         
-        for i, name in enumerate(unique_names):
-            with tabs[i]:
+        # 全体表示タブ
+        with check_tabs[0]:
+            total_df = df.copy()
+            total_df['date'] = total_df['date'].astype(str)
+            total_styled = total_df[['name', 'date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
+            total_styled.columns = ['担当者', '日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
+            
+            # 合計行を追加
+            total_row = pd.DataFrame([{
+                '担当者': '合計',
+                '日付': '',
+                '経路': '',
+                '距離(km)': total_styled['距離(km)'].sum(),
+                '交通費(円)': total_styled['交通費(円)'].sum(),
+                '手当(円)': total_styled['手当(円)'].sum(),
+                '合計(円)': total_styled['合計(円)'].sum()
+            }])
+            total_styled = pd.concat([total_styled, total_row])
+            
+            st.dataframe(
+                total_styled.style.format({
+                    '距離(km)': '{:.1f}',
+                    '交通費(円)': '{:,.0f}',
+                    '手当(円)': '{:,.0f}',
+                    '合計(円)': '{:,.0f}'
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+        
+        # 個人タブ
+        for i, name in enumerate(unique_names, 1):
+            with check_tabs[i]:
                 person_data = df[df['name'] == name].copy()
                 if len(person_data) > 0:
                     styled_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
                     styled_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
                     
-                    # 数値フォーマット
-                    styled_df['距離(km)'] = styled_df['距離(km)'].map('{:.1f}'.format)
-                    styled_df['交通費(円)'] = styled_df['交通費(円)'].map('{:,.0f}'.format)
-                    styled_df['手当(円)'] = styled_df['手当(円)'].map('{:,.0f}'.format)
-                    styled_df['合計(円)'] = styled_df['合計(円)'].map('{:,.0f}'.format)
+                    # 合計行を追加
+                    summary_row = pd.DataFrame([{
+                        '日付': '合計',
+                        '経路': '',
+                        '距離(km)': styled_df['距離(km)'].sum(),
+                        '交通費(円)': styled_df['交通費(円)'].sum(),
+                        '手当(円)': styled_df['手当(円)'].sum(),
+                        '合計(円)': styled_df['合計(円)'].sum()
+                    }])
+                    styled_df = pd.concat([styled_df, summary_row])
                     
-                    # データ表示
-                    st.markdown(f"### {name}様の精算データ")
+                    st.markdown(f"#### {name}様の精算データ")
                     st.dataframe(
-                        styled_df,
+                        styled_df.style.format({
+                            '距離(km)': '{:.1f}',
+                            '交通費(円)': '{:,.0f}',
+                            '手当(円)': '{:,.0f}',
+                            '合計(円)': '{:,.0f}'
+                        }),
                         use_container_width=True,
                         hide_index=True
                     )
-                    
-                    # Excel用データ準備
+        
+        # 2. 精算書ダウンロード用のセクション
+        st.markdown("### 精算書ダウンロード")
+        download_tabs = st.tabs(unique_names)
+        
+        for i, name in enumerate(unique_names):
+            with download_tabs[i]:
+                person_data = df[df['name'] == name].copy()
+                if len(person_data) > 0:
                     excel_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
                     excel_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
                     
