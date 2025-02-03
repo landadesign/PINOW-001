@@ -1,107 +1,95 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import re
 import io
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
-import zipfile
-import os
-from pathlib import Path
-from reportlab.pdfgen import canvas
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
-import openpyxl
-from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 
-# ページ設定とスタイルの追加
-st.set_page_config(
-    page_title="PINO精算アプリケーション",
-    layout="wide"
-)
-
-# カスタムCSS
-st.markdown("""
-    <style>
-    .main {
-        padding: 20px;
-    }
-    .stTextArea textarea {
-        font-size: 16px;
-    }
-    .stDataFrame {
-        font-size: 14px;
-    }
-    .stButton>button {
-        width: 100%;
-        background-color: #4CAF50;
-        color: white;
-        padding: 8px 16px;
-        border: none;
-        border-radius: 4px;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        padding: 8px 16px;
-        background-color: #f0f2f6;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #4CAF50 !important;
-        color: white !important;
-    }
-    div[data-testid="stDataFrameResizable"] {
-        width: 100%;
-        margin: 0 auto;
-    }
-    div[data-testid="stDataFrameResizable"] table {
-        width: 100% !important;
-    }
-    div[data-testid="stDataFrameResizable"] td {
-        text-align: right;
-        padding: 8px;
-    }
-    div[data-testid="stDataFrameResizable"] td:nth-child(2) {
-        text-align: left;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# ページ設定
+st.set_page_config(page_title="PINO精算アプリケーション", layout="wide")
 
 # 定数
 RATE_PER_KM = 15
 DAILY_ALLOWANCE = 200
 
+def create_expense_table_image(df, name):
+    # 画像サイズとフォント設定
+    width = 1200
+    row_height = 60
+    header_height = 80
+    padding = 40
+    height = header_height + (len(df) + 2) * row_height + padding * 2
+    
+    # 画像作成
+    img = Image.new('RGB', (width, height), 'white')
+    draw = ImageDraw.Draw(img)
+    
+    # フォントサイズ
+    title_font_size = 32
+    header_font_size = 24
+    content_font_size = 24
+    
+    # デフォルトフォント使用
+    font = ImageFont.load_default()
+    
+    # タイトル描画
+    title = f"{name}様 1月 交通費清算書"
+    draw.text((padding, padding), title, fill='black', font=font)
+    
+    # ヘッダー
+    headers = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
+    x_positions = [padding, padding + 100, padding + 500, padding + 650, padding + 800, padding + 950]
+    
+    for header, x in zip(headers, x_positions):
+        draw.text((x, padding + header_height), header, fill='black', font=font)
+    
+    # データ行
+    y = padding + header_height + row_height
+    for _, row in df.iterrows():
+        draw.text((x_positions[0], y), str(row['date']), fill='black', font=font)
+        draw.text((x_positions[1], y), str(row['route']), fill='black', font=font)
+        draw.text((x_positions[2], y), f"{row['total_distance']:.1f}", fill='black', font=font)
+        draw.text((x_positions[3], y), f"{int(row['transportation_fee']):,}", fill='black', font=font)
+        draw.text((x_positions[4], y), f"{int(row['allowance']):,}", fill='black', font=font)
+        draw.text((x_positions[5], y), f"{int(row['total']):,}", fill='black', font=font)
+        y += row_height
+    
+    # 合計行
+    y += row_height
+    draw.text((x_positions[0], y), "合計", fill='black', font=font)
+    draw.text((x_positions[2], y), f"{df['total_distance'].sum():.1f}", fill='black', font=font)
+    draw.text((x_positions[3], y), f"{int(df['transportation_fee'].sum()):,}", fill='black', font=font)
+    draw.text((x_positions[4], y), f"{int(df['allowance'].sum()):,}", fill='black', font=font)
+    draw.text((x_positions[5], y), f"{int(df['total'].sum()):,}", fill='black', font=font)
+    
+    # 注釈
+    draw.text((padding, height - row_height), "※2025年1月分給与にて清算しました。", fill='black', font=font)
+    
+    # 画像をバイト列に変換
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    img_byte_arr = img_byte_arr.getvalue()
+    
+    return img_byte_arr
+
 def parse_expense_data(text):
-    """テキストデータを解析してDataFrameに変換"""
     try:
-        # テキストを行に分割
         lines = [line.strip() for line in text.split('\n') if line.strip()]
-        
-        # データを格納するリスト
         data = []
-        
-        # 各行を解析
         current_name = None
+        
         for line in lines:
-            # 名前の行を検出（「様」または「さん」を含む行）
-            if 'さん' in line or '様' in line:
-                current_name = line.replace('さん', '').replace('様', '').strip()
+            if '様' in line:
+                current_name = line.replace('様', '').strip()
                 continue
-            
-            # 日付と経路のパターンを検出
-            # 例: "1/6 LA→新宿" や "1/6  LA→新宿" など
-            match = re.match(r'(\d{1,2}/\d{1,2})\s+(.+)', line)
-            if match and current_name:
-                date, route = match.groups()
                 
-                # 経路から距離を計算
-                route_points = [p.strip() for p in route.split('→') if p.strip()]
-                distance = (len(route_points) - 1) * 5.0  # 経由地点間を5kmと仮定
+            parts = line.split()
+            if len(parts) >= 2 and current_name:
+                date = parts[0]
+                route = ' '.join(parts[1:])
+                route_points = route.split('→')
+                distance = (len(route_points) - 1) * 5.0
                 
-                # 交通費と手当を計算
                 transportation_fee = distance * RATE_PER_KM
                 allowance = DAILY_ALLOWANCE
                 total = transportation_fee + allowance
@@ -116,278 +104,19 @@ def parse_expense_data(text):
                     'total': total
                 })
         
-        # DataFrameを作成
         if data:
-            df = pd.DataFrame(data)
-            return df
-        else:
-            st.error("有効なデータが見つかりませんでした。以下の形式で入力してください：\n\n例：\n山田様\n1/6 LA→新宿\n1/10 LA→渋谷→新宿")
-            return None
-            
-    except Exception as e:
-        st.error(f"データの解析中にエラーが発生しました: {str(e)}\n\n正しい形式で入力されているか確認してください。")
+            return pd.DataFrame(data)
+        st.error("データが見つかりませんでした。正しい形式で入力してください。")
         return None
-
-def format_number(val):
-    if pd.isna(val):
-        return ''
-    if isinstance(val, str) and '+' in val:  # 計算式の場合
-        return val
-    if isinstance(val, float):
-        if val.is_integer():
-            return f"{int(val):,}"
-        return f"{val:.1f}"
-    if isinstance(val, (int, str)):
-        try:
-            return f"{int(val):,}"
-        except (ValueError, TypeError):
-            return val
-    return val
-
-def create_expense_table_image(df, name, start_date):
-    # フォントとサイズの設定
-    title_font_size = 48  # さらに大きく
-    header_font_size = 32
-    content_font_size = 24
-    padding = 80
-    row_height = 80
-    col_widths = [120, 600, 140, 160, 140, 140]  # 列幅をさらに広く
-    
-    # 画像サイズを大きくして高解像度に対応
-    width = sum(col_widths) + padding * 2
-    height = (len(df) + 3) * row_height + padding * 3
-    
-    # 画像の作成（サイズを3倍に）
-    scale_factor = 3
-    img = Image.new('RGB', (int(width * scale_factor), int(height * scale_factor)), 'white')
-    draw = ImageDraw.Draw(img)
-    
-    # デフォルトフォントを使用
-    title_font = ImageFont.load_default()
-    header_font = ImageFont.load_default()
-    content_font = ImageFont.load_default()
-    
-    def scale(x): return int(x * scale_factor)
-    
-    # タイトルの描画
-    title = f"{name}様 1月 交通費清算書"
-    draw.text((scale(padding), scale(padding)), title, fill='black', font=title_font)
-    
-    # ヘッダーの描画
-    headers = ['日付', '経路', '距離\n(km)', '交通費\n(円)', '手当\n(円)', '合計\n(円)']
-    x = scale(padding)
-    y = scale(padding + row_height * 1.5)
-    
-    # ヘッダー背景
-    for header, width in zip(headers, col_widths):
-        draw.rectangle([x, y, x + scale(width), y + scale(row_height)], 
-                      fill='#f5f5f5', outline='#666666', width=4)
         
-        lines = header.split('\n')
-        for i, line in enumerate(lines):
-            # デフォルトフォントではgetlengthが使えないため、
-            # 文字数に基づいて位置を計算
-            text_width = len(line) * scale(header_font_size/2)
-            text_x = x + (scale(width) - text_width) / 2
-            text_y = y + scale(10) + (i * scale(row_height - 20) / len(lines))
-            draw.text((text_x, text_y), line, fill='black', font=header_font)
-        x += scale(width)
-    
-    # データの描画
-    y += scale(row_height)
-    for i, (_, row) in enumerate(df.iterrows()):
-        x = scale(padding)
-        for col_idx, (value, width) in enumerate(zip(row, col_widths)):
-            draw.rectangle([x, y, x + scale(width), y + scale(row_height)], 
-                         outline='#666666', width=4)
-            
-            text = str(value) if pd.notna(value) else ''
-            
-            if col_idx == 1:  # 経路列
-                words = text.split('→')
-                if len(words) >= 3:
-                    mid_point = len(words) // 2
-                    line1 = '→'.join(words[:mid_point]) + '→'
-                    line2 = '→'.join(words[mid_point:])
-                    
-                    draw.text((x + scale(15), y + scale(10)), line1, 
-                             fill='black', font=content_font)
-                    draw.text((x + scale(15), y + scale(row_height/2)), line2, 
-                             fill='black', font=content_font)
-                else:
-                    text_y = y + scale(row_height/2 - content_font_size/2)
-                    draw.text((x + scale(15), text_y), text, 
-                             fill='black', font=content_font)
-            else:
-                # 数値列は右寄せ（デフォルトフォントの場合）
-                text_width = len(text) * scale(content_font_size/2)
-                text_x = x + scale(width) - text_width - scale(15)
-                text_y = y + scale(row_height/2 - content_font_size/2)
-                draw.text((text_x, text_y), text, fill='black', font=content_font)
-            x += scale(width)
-        y += scale(row_height)
-    
-    # 注釈の描画
-    note = "※2025年1月分給与にて清算しました。"
-    draw.text((scale(padding), scale(height - row_height)), note, 
-              fill='black', font=content_font)
-    
-    # 画像をバイト列に変換（300dpiで保存）
-    img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='PNG', dpi=(300, 300))
-    img_byte_arr = img_byte_arr.getvalue()
-    
-    return img_byte_arr
-
-def create_zip_file(images_dict):
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for name, img_bytes in images_dict.items():
-            zip_file.writestr(
-                f"精算書_{name}_{datetime.now().strftime('%Y%m%d')}.png",
-                img_bytes
-            )
-    return zip_buffer.getvalue()
-
-def create_expense_report_pdf(df, name):
-    # PDFバッファの作成
-    buffer = io.BytesIO()
-    
-    # A4サイズの設定
-    width, height = A4
-    
-    # PDFキャンバスの作成
-    c = canvas.Canvas(buffer, pagesize=A4)
-    
-    # フォントの設定
-    c.setFont('Helvetica', 12)
-    
-    # タイトルの描画
-    c.setFont('Helvetica-Bold', 24)
-    c.drawString(30*mm, 270*mm, f"{name}様 1月 交通費清算書")
-    
-    # ヘッダーの描画
-    headers = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
-    col_widths = [25*mm, 70*mm, 20*mm, 25*mm, 25*mm, 25*mm]
-    x_positions = [30*mm]
-    for width in col_widths[:-1]:
-        x_positions.append(x_positions[-1] + width)
-    
-    # ヘッダー背景
-    c.setFillColorRGB(0.95, 0.95, 0.95)
-    c.rect(30*mm, 250*mm, sum(col_widths), 10*mm, fill=1)
-    
-    # ヘッダーテキスト
-    c.setFillColorRGB(0, 0, 0)
-    c.setFont('Helvetica-Bold', 10)
-    for header, x in zip(headers, x_positions):
-        c.drawString(x + 2*mm, 252*mm, header)
-    
-    # データの描画
-    c.setFont('Helvetica', 10)
-    y_position = 240*mm
-    for _, row in df.iterrows():
-        # 罫線
-        c.rect(30*mm, y_position - 8*mm, sum(col_widths), 10*mm)
-        for x, width in zip(x_positions, col_widths):
-            c.line(x, y_position - 8*mm, x, y_position + 2*mm)
-        
-        # データ
-        values = [
-            str(row['日付']),
-            str(row['経路']),
-            str(row['距離(km)']),
-            str(row['交通費(円)']),
-            str(row['手当(円)']),
-            str(row['合計(円)'])
-        ]
-        
-        for value, x, width in zip(values, x_positions, col_widths):
-            if len(value) > 30:  # 経路が長い場合は2行に分割
-                parts = value.split('→')
-                mid = len(parts) // 2
-                line1 = '→'.join(parts[:mid])
-                line2 = '→'.join(parts[mid:])
-                c.drawString(x + 2*mm, y_position - 2*mm, line1)
-                c.drawString(x + 2*mm, y_position - 6*mm, line2)
-            else:
-                c.drawString(x + 2*mm, y_position - 4*mm, value)
-        
-        y_position -= 10*mm
-    
-    # 注釈の描画
-    c.setFont('Helvetica', 10)
-    c.drawString(30*mm, 30*mm, "※2025年1月分給与にて清算しました。")
-    
-    # PDFの保存
-    c.save()
-    buffer.seek(0)
-    return buffer.getvalue()
-
-def create_expense_excel(df, name):
-    """Excelファイルを作成"""
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # データフレームをExcelに書き込み
-        df.to_excel(writer, sheet_name='精算書', index=False, startrow=1)
-        
-        # ワークシートを取得
-        ws = writer.sheets['精算書']
-        
-        # タイトルを追加
-        ws.insert_rows(0)
-        ws['A1'] = f"{name}様 1月 交通費清算書"
-        ws.merge_cells('A1:F1')
-        
-        # スタイルの設定
-        title_font = Font(size=14, bold=True)
-        header_font = Font(size=11, bold=True)
-        header_fill = PatternFill(start_color='F0F0F0', end_color='F0F0F0', fill_type='solid')
-        border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
-        
-        # タイトルのスタイル
-        ws['A1'].font = title_font
-        ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
-        
-        # ヘッダーのスタイル
-        for cell in ws[2]:
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-            cell.border = border
-        
-        # データセルのスタイル
-        for row in ws.iter_rows(min_row=3):
-            for cell in row:
-                cell.border = border
-                if isinstance(cell.value, (int, float)):
-                    cell.alignment = Alignment(horizontal='right')
-                else:
-                    cell.alignment = Alignment(horizontal='left')
-        
-        # 列幅の調整
-        ws.column_dimensions['A'].width = 12  # 日付
-        ws.column_dimensions['B'].width = 50  # 経路
-        ws.column_dimensions['C'].width = 12  # 距離
-        ws.column_dimensions['D'].width = 12  # 交通費
-        ws.column_dimensions['E'].width = 12  # 手当
-        ws.column_dimensions['F'].width = 12  # 合計
-        
-        # 注釈を追加
-        last_row = len(df) + 3
-        ws[f'A{last_row}'] = "※2025年1月分給与にて清算しました。"
-        ws.merge_cells(f'A{last_row}:F{last_row}')
-        
-    return output.getvalue()
+    except Exception as e:
+        st.error(f"エラーが発生しました: {str(e)}")
+        return None
 
 def main():
     st.title("PINO精算アプリケーション")
     
+    # データ入力
     input_text = st.text_area("精算データを貼り付けてください", height=200)
     
     if st.button("データを解析"):
@@ -397,94 +126,50 @@ def main():
                 st.session_state['expense_data'] = df
                 st.success("データを解析しました！")
     
+    # データ表示と精算書生成
     if 'expense_data' in st.session_state:
         df = st.session_state['expense_data']
         unique_names = df['name'].unique().tolist()
         
-        # 1. チェック用の精算書表示
-        st.markdown("### 精算チェック")
-        check_tabs = st.tabs(["全体表示"] + unique_names)
-        
-        # 全体表示タブ
-        with check_tabs[0]:
-            total_df = df.copy()
-            total_df['date'] = total_df['date'].astype(str)
-            total_styled = total_df[['name', 'date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
-            total_styled.columns = ['担当者', '日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
-            
-            # 合計行を追加
-            total_row = pd.DataFrame([{
-                '担当者': '合計',
-                '日付': '',
-                '経路': '',
-                '距離(km)': total_styled['距離(km)'].sum(),
-                '交通費(円)': total_styled['交通費(円)'].sum(),
-                '手当(円)': total_styled['手当(円)'].sum(),
-                '合計(円)': total_styled['合計(円)'].sum()
-            }])
-            total_styled = pd.concat([total_styled, total_row])
-            
-            st.dataframe(
-                total_styled.style.format({
-                    '距離(km)': '{:.1f}',
-                    '交通費(円)': '{:,.0f}',
-                    '手当(円)': '{:,.0f}',
-                    '合計(円)': '{:,.0f}'
-                }),
-                use_container_width=True,
-                hide_index=True
-            )
-        
-        # 個人タブ
-        for i, name in enumerate(unique_names, 1):
-            with check_tabs[i]:
-                person_data = df[df['name'] == name].copy()
-                if len(person_data) > 0:
-                    styled_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
-                    styled_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
-                    
-                    # 合計行を追加
-                    summary_row = pd.DataFrame([{
-                        '日付': '合計',
-                        '経路': '',
-                        '距離(km)': styled_df['距離(km)'].sum(),
-                        '交通費(円)': styled_df['交通費(円)'].sum(),
-                        '手当(円)': styled_df['手当(円)'].sum(),
-                        '合計(円)': styled_df['合計(円)'].sum()
-                    }])
-                    styled_df = pd.concat([styled_df, summary_row])
-                    
-                    st.markdown(f"#### {name}様の精算データ")
-                    st.dataframe(
-                        styled_df.style.format({
-                            '距離(km)': '{:.1f}',
-                            '交通費(円)': '{:,.0f}',
-                            '手当(円)': '{:,.0f}',
-                            '合計(円)': '{:,.0f}'
-                        }),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-        
-        # 2. 精算書ダウンロード用のセクション
-        st.markdown("### 精算書ダウンロード")
-        download_tabs = st.tabs(unique_names)
+        # タブ作成
+        tabs = st.tabs(unique_names)
         
         for i, name in enumerate(unique_names):
-            with download_tabs[i]:
+            with tabs[i]:
                 person_data = df[df['name'] == name].copy()
-                if len(person_data) > 0:
-                    excel_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
-                    excel_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
-                    
-                    # Excelダウンロード
-                    excel_data = create_expense_excel(excel_df, name)
-                    st.download_button(
-                        label=f"{name}様の清算書をダウンロード",
-                        data=excel_data,
-                        file_name=f"清算書_{name}_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                
+                # データ表示
+                st.markdown(f"### {name}様の精算データ")
+                
+                display_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
+                display_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
+                
+                # 合計行を追加
+                totals = display_df.sum(numeric_only=True).to_frame().T
+                totals['日付'] = '合計'
+                totals['経路'] = ''
+                display_df = pd.concat([display_df, totals])
+                
+                # データフレーム表示
+                st.dataframe(
+                    display_df.style.format({
+                        '距離(km)': '{:.1f}',
+                        '交通費(円)': '{:,.0f}',
+                        '手当(円)': '{:,.0f}',
+                        '合計(円)': '{:,.0f}'
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # 画像生成とダウンロードボタン
+                img_bytes = create_expense_table_image(person_data, name)
+                st.download_button(
+                    label="精算書をダウンロード",
+                    data=img_bytes,
+                    file_name=f"精算書_{name}_{datetime.now().strftime('%Y%m%d')}.png",
+                    mime="image/png"
+                )
 
 if __name__ == "__main__":
     main()
