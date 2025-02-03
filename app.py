@@ -101,8 +101,6 @@ def parse_expense_data(text):
         lines = [line.strip() for line in text.split('\n') if line.strip()]
         data = []
         current_name = None
-        
-        # 日付ごとのデータを一時保存
         daily_routes = {}
         
         for line in lines:
@@ -118,7 +116,7 @@ def parse_expense_data(text):
                             'routes': routes,
                             'total_distance': total_distance,
                             'transportation_fee': transportation_fee,
-                            'allowance': DAILY_ALLOWANCE,  # 1日1回のみ
+                            'allowance': DAILY_ALLOWANCE,
                             'total': transportation_fee + DAILY_ALLOWANCE
                         })
                     daily_routes = {}
@@ -144,7 +142,7 @@ def parse_expense_data(text):
         if current_name and daily_routes:
             for date, routes in daily_routes.items():
                 total_distance = sum(route['distance'] for route in routes)
-                transportation_fee = int(total_distance * RATE_PER_KM)  # 切り捨て
+                transportation_fee = int(total_distance * RATE_PER_KM)
                 data.append({
                     'name': current_name,
                     'date': date,
@@ -157,8 +155,7 @@ def parse_expense_data(text):
         
         if data:
             df = pd.DataFrame(data)
-            df = df.sort_values(['name', 'date'])  # 日付順にソート
-            return df
+            return df.sort_values(['name', 'date'])  # 日付順にソート
         
         st.error("データが見つかりませんでした。正しい形式で入力してください。")
         return None
@@ -198,14 +195,14 @@ def main():
                 # データ表示用のリストを作成
                 display_rows = []
                 for _, row in person_data.iterrows():
-                    for route_data in row['routes']:
+                    for route in row['routes']:
                         display_rows.append({
                             '日付': row['date'],
-                            '経路': route_data['route'],
-                            '合計距離(km)': row['total_distance'] if route_data == row['routes'][0] else '',
-                            '交通費（距離×15P）(円)': row['transportation_fee'] if route_data == row['routes'][0] else '',
-                            '運転手当(円)': row['allowance'] if route_data == row['routes'][0] else '',
-                            '合計(円)': row['total'] if route_data == row['routes'][0] else ''
+                            '経路': route['route'],
+                            '合計距離(km)': row['total_distance'] if route == row['routes'][0] else '',
+                            '交通費（距離×15P）(円)': row['transportation_fee'] if route == row['routes'][0] else '',
+                            '運転手当(円)': row['allowance'] if route == row['routes'][0] else '',
+                            '合計(円)': row['total'] if route == row['routes'][0] else ''
                         })
                 
                 display_df = pd.DataFrame(display_rows)
