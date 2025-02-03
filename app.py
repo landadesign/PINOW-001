@@ -461,45 +461,31 @@ def main():
                     styled_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
                     styled_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
                     
+                    # 数値のフォーマット
+                    styled_df['距離(km)'] = styled_df['距離(km)'].map('{:.1f}'.format)
+                    styled_df['交通費(円)'] = styled_df['交通費(円)'].map('{:,.0f}'.format)
+                    styled_df['手当(円)'] = styled_df['手当(円)'].map('{:,.0f}'.format)
+                    styled_df['合計(円)'] = styled_df['合計(円)'].map('{:,.0f}'.format)
+                    
                     # データフレームの表示
                     st.markdown(f"### {name}様の精算データ")
                     st.dataframe(
-                        styled_df.style
-                        .format({
-                            '距離(km)': '{:.1f}',
-                            '交通費(円)': '{:.0f}',
-                            '手当(円)': '{:.0f}',
-                            '合計(円)': '{:.0f}'
-                        })
-                        .set_properties(**{
-                            'text-align': 'right',
-                            'font-size': '14px',
-                            'padding': '5px'
-                        })
-                        .set_properties(subset=['経路'], **{
-                            'text-align': 'left'
-                        }),
-                        use_container_width=True
+                        styled_df,
+                        use_container_width=True,
+                        hide_index=True
                     )
                     
+                    # Excel用のデータフレームを準備（数値型を保持）
+                    excel_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
+                    excel_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
+                    
                     # Excel生成とダウンロードボタン
-                    excel_data = create_expense_excel(styled_df, name)
+                    excel_data = create_expense_excel(excel_df, name)
                     st.download_button(
                         label=f"{name}様の清算書をダウンロード",
                         data=excel_data,
                         file_name=f"清算書_{name}_{datetime.now().strftime('%Y%m%d')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                    
-                    # PDF生成
-                    pdf_bytes = create_expense_report_pdf(styled_df, name)
-                    
-                    # ダウンロードボタン
-                    st.download_button(
-                        label=f"{name}様の清算書",
-                        data=pdf_bytes,
-                        file_name=f"清算書_{name}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                        mime="application/pdf"
                     )
 
 if __name__ == "__main__":
