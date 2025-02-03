@@ -187,36 +187,45 @@ def format_number(val):
 
 def create_expense_table_image(df, name, start_date):
     # フォントとサイズの設定
-    title_font_size = 32
-    header_font_size = 16
-    content_font_size = 15
-    padding = 50
-    row_height = 55
-    col_widths = [90, 480, 110, 130, 110, 110]
+    title_font_size = 40
+    header_font_size = 24
+    content_font_size = 20
+    padding = 60
+    row_height = 65
+    col_widths = [100, 520, 120, 140, 120, 120]
     
     # 画像サイズを大きくして高解像度に対応
     width = sum(col_widths) + padding * 2
     height = (len(df) + 3) * row_height + padding * 3
     
-    # 画像の作成（サイズを2倍に）
-    scale_factor = 2
+    # 画像の作成（サイズを2.5倍に）
+    scale_factor = 2.5
     img = Image.new('RGB', (int(width * scale_factor), int(height * scale_factor)), 'white')
     draw = ImageDraw.Draw(img)
     
-    try:
-        # macOS用フォント設定
-        title_font = ImageFont.truetype('/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc', int(title_font_size * scale_factor))
-        header_font = ImageFont.truetype('/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc', int(header_font_size * scale_factor))
-        content_font = ImageFont.truetype('/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc', int(content_font_size * scale_factor))
-    except:
+    # フォントの設定（Windowsのデフォルトフォントパスを優先）
+    font_paths = [
+        'C:\\Windows\\Fonts\\yugothm.ttc',  # Windows Yu Gothic UI
+        'C:\\Windows\\Fonts\\msgothic.ttc',  # MS Gothic
+        '/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc',  # macOS
+        '/usr/share/fonts/truetype/fonts-japanese-gothic.ttf',  # Linux
+    ]
+    
+    title_font = None
+    header_font = None
+    content_font = None
+    
+    for font_path in font_paths:
         try:
-            # Windows用フォント設定
-            title_font = ImageFont.truetype('msgothic.ttc', int(title_font_size * scale_factor))
-            header_font = ImageFont.truetype('msgothic.ttc', int(header_font_size * scale_factor))
-            content_font = ImageFont.truetype('msgothic.ttc', int(content_font_size * scale_factor))
+            title_font = ImageFont.truetype(font_path, int(title_font_size * scale_factor))
+            header_font = ImageFont.truetype(font_path, int(header_font_size * scale_factor))
+            content_font = ImageFont.truetype(font_path, int(content_font_size * scale_factor))
+            break
         except:
-            # フォールバック
-            title_font = header_font = content_font = ImageFont.load_default()
+            continue
+    
+    if title_font is None:
+        title_font = header_font = content_font = ImageFont.load_default()
     
     def scale(x): return int(x * scale_factor)
     
@@ -232,7 +241,7 @@ def create_expense_table_image(df, name, start_date):
     # ヘッダー背景
     for header, width in zip(headers, col_widths):
         draw.rectangle([x, y, x + scale(width), y + scale(row_height)], 
-                      fill='#f5f5f5', outline='#666666', width=2)
+                      fill='#f5f5f5', outline='#666666', width=3)
         
         lines = header.split('\n')
         for i, line in enumerate(lines):
@@ -248,7 +257,7 @@ def create_expense_table_image(df, name, start_date):
         x = scale(padding)
         for col_idx, (value, width) in enumerate(zip(row, col_widths)):
             draw.rectangle([x, y, x + scale(width), y + scale(row_height)], 
-                         outline='#666666', width=2)
+                         outline='#666666', width=3)
             
             text = str(value) if pd.notna(value) else ''
             
@@ -264,12 +273,10 @@ def create_expense_table_image(df, name, start_date):
                     draw.text((x + scale(10), y + scale(row_height/2)), line2, 
                              fill='black', font=content_font)
                 else:
-                    # 1行で収まる場合
                     text_y = y + scale(row_height/2 - content_font_size/2)
                     draw.text((x + scale(10), text_y), text, 
                              fill='black', font=content_font)
             else:
-                # 数値列は右寄せ
                 text_width = content_font.getlength(text)
                 text_x = x + scale(width) - text_width - scale(10)
                 text_y = y + scale(row_height/2 - content_font_size/2)
@@ -282,9 +289,9 @@ def create_expense_table_image(df, name, start_date):
     draw.text((scale(padding), scale(height - row_height)), note, 
               fill='black', font=content_font)
     
-    # 画像をバイト列に変換（200dpiで保存）
+    # 画像をバイト列に変換（300dpiで保存）
     img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='PNG', dpi=(200, 200))
+    img.save(img_byte_arr, format='PNG', dpi=(300, 300))
     img_byte_arr = img_byte_arr.getvalue()
     
     return img_byte_arr
