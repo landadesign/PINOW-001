@@ -70,113 +70,56 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def parse_expense_data(text):
-    if not text:
+    """テキストデータを解析してDataFrameに変換"""
+    try:
+        # テキストを行に分割
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        
+        # データを格納するリスト
+        data = []
+        
+        # 各行を解析
+        current_name = None
+        for line in lines:
+            # 名前の行を検出
+            if '様' in line:
+                current_name = line.replace('様', '').strip()
+                continue
+            
+            # データ行を解析
+            match = re.match(r'(\d{1,2}/\d{1,2})\s+(.+)', line)
+            if match and current_name:
+                date, route = match.groups()
+                
+                # 距離を計算（仮の実装）
+                distance = len(route.split('→')) * 5.0  # 仮の距離計算
+                
+                # 交通費と手当を計算
+                transportation_fee = distance * RATE_PER_KM
+                allowance = DAILY_ALLOWANCE
+                total = transportation_fee + allowance
+                
+                data.append({
+                    'name': current_name,
+                    'date': date,
+                    'route': route,
+                    'total_distance': distance,
+                    'transportation_fee': transportation_fee,
+                    'allowance': allowance,
+                    'total': total
+                })
+        
+        # DataFrameを作成
+        if data:
+            df = pd.DataFrame(data)
+            return df
+        else:
+            st.error("有効なデータが見つかりませんでした。")
+            return None
+            
+    except Exception as e:
+        st.error(f"データの解析中にエラーが発生しました: {str(e)}")
         return None
-    
-    entries = []
-    
-    # テキストを正規化
-    text = text.replace('\r\n', '\n').strip()
-    
-    # 【ピノ】で始まるエントリを抽出
-    for entry in text.split('【ピノ】'):
-        if not entry.strip():
-            continue
-            
-        # 基本情報を抽出
-        match = re.search(r'([^　\s]+(?:[ 　]+[^　\s]+)*)\s+(\d+\/\d+)\s*\([月火水木金土日]\)', entry)
-        if not match:
-            continue
-            
-        name, date = match.groups()
-        
-        # 距離を抽出
-        distance_match = re.search(r'(\d+\.?\d*)(?:km|㎞|ｋｍ|kｍ)', entry)
-        if not distance_match:
-            continue
-            
-        distance = float(distance_match.group(1))
-        
-        # 経路を抽出（括弧を含む完全な経路）
-        route_start = entry.find(')') + 1
-        route_end = entry.find(distance_match.group())
-        route = entry[route_start:route_end].strip()
-        
-        entries.append({
-            'name': name.strip(),
-            'date': date,
-            'route': route,
-            'distance': distance
-        })
-    
-    # DataFrameに変換
-    df = pd.DataFrame(entries)
-    
-    # 日付でソート
-    df['date'] = pd.to_datetime(df['date'].apply(lambda x: f"2024/{x}"))
-    df = df.sort_values('date')
-    
-    # 日付ごとの集計を作成
-    result = []
-    for name in df['name'].unique():
-        person_data = df[df['name'] == name]
-        for date, group in person_data.groupby('date'):
-            routes = group['route'].tolist()
-            distances = group['distance'].tolist()
-            total_distance = sum(distances)
-            transportation_fee = int(total_distance * RATE_PER_KM)  # 切り捨て
-            
-            # 複数経路がある場合
-            if len(routes) > 1:
-                # 最初の行に計算式を含める
-                result.append({
-                    'name': name,
-                    'date': date.strftime('%-m/%-d'),
-                    'route': routes[0],
-                    'total_distance': f"{'+'.join([str(d) for d in distances])}={total_distance}",
-                    'transportation_fee': transportation_fee,
-                    'allowance': DAILY_ALLOWANCE,
-                    'total': transportation_fee + DAILY_ALLOWANCE
-                })
-                # 残りの行
-                for route in routes[1:]:
-                    result.append({
-                        'name': name,
-                        'date': date.strftime('%-m/%-d'),
-                        'route': route,
-                        'total_distance': None,
-                        'transportation_fee': None,
-                        'allowance': None,
-                        'total': None
-                    })
-            else:
-                # 単一経路の場合は通常通り
-                result.append({
-                    'name': name,
-                    'date': date.strftime('%-m/%-d'),
-                    'route': routes[0],
-                    'total_distance': total_distance,
-                    'transportation_fee': transportation_fee,
-                    'allowance': DAILY_ALLOWANCE,
-                    'total': transportation_fee + DAILY_ALLOWANCE
-                })
-    
-    # 各担当者の最後に合計行を追加
-    df_result = pd.DataFrame(result)
-    for name in df_result['name'].unique():
-        person_data = df_result[df_result['name'] == name]
-        result.append({
-            'name': name,
-            'date': '合計',
-            'route': '',
-            'total_distance': sum(float(d.split('=')[-1]) if isinstance(d, str) and '=' in d else d 
-                               for d in person_data['total_distance'] if d is not None),
-            'transportation_fee': person_data['transportation_fee'].sum(),
-            'allowance': person_data['allowance'].sum(),
-            'total': person_data['total'].sum()
-        })
-    
-    return pd.DataFrame(result)
 
 def format_number(val):
     if pd.isna(val):
@@ -375,7 +318,7 @@ def create_expense_report_pdf(df, name):
     return buffer.getvalue()
 
 def create_expense_excel(df, name):
-    # Excelファイルを作成
+    """Excelファイルを作成"""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         # データフレームをExcelに書き込み
