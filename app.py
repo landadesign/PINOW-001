@@ -13,6 +13,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+import openpyxl
+from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 
 # ページ設定
 st.set_page_config(
@@ -372,6 +374,67 @@ def create_expense_report_pdf(df, name):
     buffer.seek(0)
     return buffer.getvalue()
 
+def create_expense_excel(df, name):
+    # Excelファイルを作成
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # データフレームをExcelに書き込み
+        df.to_excel(writer, sheet_name='精算書', index=False, startrow=1)
+        
+        # ワークシートを取得
+        ws = writer.sheets['精算書']
+        
+        # タイトルを追加
+        ws.insert_rows(0)
+        ws['A1'] = f"{name}様 1月 交通費清算書"
+        ws.merge_cells('A1:F1')
+        
+        # スタイルの設定
+        title_font = Font(size=14, bold=True)
+        header_font = Font(size=11, bold=True)
+        header_fill = PatternFill(start_color='F0F0F0', end_color='F0F0F0', fill_type='solid')
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        # タイトルのスタイル
+        ws['A1'].font = title_font
+        ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+        
+        # ヘッダーのスタイル
+        for cell in ws[2]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            cell.border = border
+        
+        # データセルのスタイル
+        for row in ws.iter_rows(min_row=3):
+            for cell in row:
+                cell.border = border
+                if isinstance(cell.value, (int, float)):
+                    cell.alignment = Alignment(horizontal='right')
+                else:
+                    cell.alignment = Alignment(horizontal='left')
+        
+        # 列幅の調整
+        ws.column_dimensions['A'].width = 12  # 日付
+        ws.column_dimensions['B'].width = 50  # 経路
+        ws.column_dimensions['C'].width = 12  # 距離
+        ws.column_dimensions['D'].width = 12  # 交通費
+        ws.column_dimensions['E'].width = 12  # 手当
+        ws.column_dimensions['F'].width = 12  # 合計
+        
+        # 注釈を追加
+        last_row = len(df) + 3
+        ws[f'A{last_row}'] = "※2025年1月分給与にて清算しました。"
+        ws.merge_cells(f'A{last_row}:F{last_row}')
+        
+    return output.getvalue()
+
 def main():
     st.title("PINO精算アプリケーション")
     
@@ -418,14 +481,15 @@ def main():
                         }),
                         use_container_width=True
                     )
-        
-        # ダウンロードボタン
-        if st.button("精算書をダウンロード", type="primary"):
-            for name in unique_names:
-                person_data = df[df['name'] == name].copy()
-                if len(person_data) > 0:
-                    styled_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
-                    styled_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
+                    
+                    # Excel生成とダウンロードボタン
+                    excel_data = create_expense_excel(styled_df, name)
+                    st.download_button(
+                        label=f"{name}様の清算書をダウンロード",
+                        data=excel_data,
+                        file_name=f"清算書_{name}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
                     
                     # PDF生成
                     pdf_bytes = create_expense_report_pdf(styled_df, name)
