@@ -15,13 +15,14 @@ DAILY_ALLOWANCE = 200
 def create_expense_table_image(df, name):
     # 画像サイズとフォント設定
     width = 1200
-    row_height = 60
-    header_height = 80
-    padding = 40
+    row_height = 40
+    header_height = 60
+    padding = 30
+    title_height = 50
     
-    # 全ルートの行数を計算
-    total_rows = sum(len(row['routes']) for _, row in df.iterrows()) + 1  # +1 for total row
-    height = header_height + (total_rows + 2) * row_height + padding * 2
+    # 全行数を計算（タイトル + ヘッダー + データ行 + 合計行 + 注釈）
+    total_rows = len(df) + 3
+    height = title_height + header_height + (total_rows * row_height) + padding * 2
     
     # 画像作成
     img = Image.new('RGB', (width, height), 'white')
@@ -31,39 +32,60 @@ def create_expense_table_image(df, name):
     font = ImageFont.load_default()
     
     # タイトル描画
-    title = f"{name}様 2024年12月25日～2025年1月 社内通貨（交通費）清算額"
+    title = f"{name}様 1月 社内通貨（交通費）清算額"
     draw.text((padding, padding), title, fill='black', font=font)
     
     # ヘッダー
-    headers = ['日付', '経路', '合計距離(km)', '交通費（距離×15P）(円)', '運転手当(円)', '合計(円)']
-    x_positions = [padding, padding + 100, padding + 500, padding + 650, padding + 800, padding + 950]
+    headers = ['日付', '経路', '距離(km)', '交通費', '運転手当']
+    x_positions = [padding, padding + 80, padding + 800, padding + 900, padding + 1000]
     
+    y = padding + title_height
     for header, x in zip(headers, x_positions):
-        draw.text((x, padding + header_height), header, fill='black', font=font)
+        draw.text((x, y), header, fill='black', font=font)
+    
+    # 罫線
+    line_y = y + header_height - 5
+    draw.line([(padding, line_y), (width - padding, line_y)], fill='black', width=1)
     
     # データ行
-    y = padding + header_height + row_height
+    y = padding + title_height + header_height
     for _, row in df.iterrows():
-        first_route = True
-        for route_data in row['routes']:
-            if first_route:
-                # 日付と合計値は最初のルートの行にのみ表示
-                draw.text((x_positions[0], y), str(row['date']), fill='black', font=font)
-                draw.text((x_positions[2], y), f"{row['total_distance']:.1f}", fill='black', font=font)
-                draw.text((x_positions[3], y), f"{int(row['transportation_fee']):,}", fill='black', font=font)
-                draw.text((x_positions[4], y), f"{int(row['allowance']):,}", fill='black', font=font)
-                draw.text((x_positions[5], y), f"{int(row['total']):,}", fill='black', font=font)
-                first_route = False
-            draw.text((x_positions[1], y), route_data['route'], fill='black', font=font)
-            y += row_height
+        # 日付
+        draw.text((x_positions[0], y), str(row['date']), fill='black', font=font)
+        
+        # 経路（長い場合は折り返し）
+        route_text = str(row['route'])
+        draw.text((x_positions[1], y), route_text, fill='black', font=font)
+        
+        # 距離
+        distance_text = f"{row['total_distance']:.1f}"
+        draw.text((x_positions[2], y), distance_text, fill='black', font=font)
+        
+        # 交通費
+        fee_text = f"{int(row['transportation_fee']):,}"
+        draw.text((x_positions[3], y), fee_text, fill='black', font=font)
+        
+        # 運転手当
+        allowance_text = f"{int(row['allowance']):,}"
+        draw.text((x_positions[4], y), allowance_text, fill='black', font=font)
+        
+        y += row_height
+    
+    # 合計行の罫線
+    line_y = y - 5
+    draw.line([(padding, line_y), (width - padding, line_y)], fill='black', width=1)
     
     # 合計行
-    y += row_height
-    draw.text((x_positions[0], y), "合計", fill='black', font=font)
-    draw.text((x_positions[5], y), f"{int(df['total'].sum()):,}", fill='black', font=font)
+    total_text = f"合計金額: {int(df['total'].sum()):,} 円"
+    draw.text((width - padding - 200, y + 10), total_text, fill='black', font=font)
     
     # 注釈
-    draw.text((padding, height - row_height), "※2025年1月分給与にて清算しました。", fill='black', font=font)
+    note_text = "※2025年1月分給与にて清算しました。"
+    draw.text((padding, height - padding - 20), note_text, fill='black', font=font)
+    
+    # 計算日時
+    calc_date = datetime.now().strftime("計算日時: %Y/%m/%d")
+    draw.text((padding, height - padding - 40), calc_date, fill='black', font=font)
     
     # 画像をバイト列に変換
     img_byte_arr = io.BytesIO()
