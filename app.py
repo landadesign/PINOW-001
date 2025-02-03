@@ -18,26 +18,24 @@ def create_expense_table_image(df, name):
     row_height = 60
     header_height = 80
     padding = 40
-    height = header_height + (len(df) + 2) * row_height + padding * 2
+    
+    # 全ルートの行数を計算
+    total_rows = sum(len(row['routes']) for _, row in df.iterrows()) + 1  # +1 for total row
+    height = header_height + (total_rows + 2) * row_height + padding * 2
     
     # 画像作成
     img = Image.new('RGB', (width, height), 'white')
     draw = ImageDraw.Draw(img)
     
-    # フォントサイズ
-    title_font_size = 32
-    header_font_size = 24
-    content_font_size = 24
-    
-    # デフォルトフォント使用
+    # フォント設定
     font = ImageFont.load_default()
     
     # タイトル描画
-    title = f"{name}様 1月 交通費清算書"
+    title = f"{name}様 2024年12月25日～2025年1月 社内通貨（交通費）清算額"
     draw.text((padding, padding), title, fill='black', font=font)
     
     # ヘッダー
-    headers = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
+    headers = ['日付', '経路', '合計距離(km)', '交通費（距離×15P）(円)', '運転手当(円)', '合計(円)']
     x_positions = [padding, padding + 100, padding + 500, padding + 650, padding + 800, padding + 950]
     
     for header, x in zip(headers, x_positions):
@@ -46,20 +44,22 @@ def create_expense_table_image(df, name):
     # データ行
     y = padding + header_height + row_height
     for _, row in df.iterrows():
-        draw.text((x_positions[0], y), str(row['date']), fill='black', font=font)
-        draw.text((x_positions[1], y), str(row['route']), fill='black', font=font)
-        draw.text((x_positions[2], y), f"{row['total_distance']:.1f}", fill='black', font=font)
-        draw.text((x_positions[3], y), f"{int(row['transportation_fee']):,}", fill='black', font=font)
-        draw.text((x_positions[4], y), f"{int(row['allowance']):,}", fill='black', font=font)
-        draw.text((x_positions[5], y), f"{int(row['total']):,}", fill='black', font=font)
-        y += row_height
+        first_route = True
+        for route_data in row['routes']:
+            if first_route:
+                # 日付と合計値は最初のルートの行にのみ表示
+                draw.text((x_positions[0], y), str(row['date']), fill='black', font=font)
+                draw.text((x_positions[2], y), f"{row['total_distance']:.1f}", fill='black', font=font)
+                draw.text((x_positions[3], y), f"{int(row['transportation_fee']):,}", fill='black', font=font)
+                draw.text((x_positions[4], y), f"{int(row['allowance']):,}", fill='black', font=font)
+                draw.text((x_positions[5], y), f"{int(row['total']):,}", fill='black', font=font)
+                first_route = False
+            draw.text((x_positions[1], y), route_data['route'], fill='black', font=font)
+            y += row_height
     
     # 合計行
     y += row_height
     draw.text((x_positions[0], y), "合計", fill='black', font=font)
-    draw.text((x_positions[2], y), f"{df['total_distance'].sum():.1f}", fill='black', font=font)
-    draw.text((x_positions[3], y), f"{int(df['transportation_fee'].sum()):,}", fill='black', font=font)
-    draw.text((x_positions[4], y), f"{int(df['allowance'].sum()):,}", fill='black', font=font)
     draw.text((x_positions[5], y), f"{int(df['total'].sum()):,}", fill='black', font=font)
     
     # 注釈
@@ -78,11 +78,30 @@ def parse_expense_data(text):
         data = []
         current_name = None
         
+        # 日付ごとのデータを一時保存
+        daily_routes = {}
+        
         for line in lines:
             if '様' in line:
+                # 新しい担当者の処理開始時に前の担当者のデータを集計
+                if current_name and daily_routes:
+                    for date, routes in daily_routes.items():
+                        total_distance = sum(route['distance'] for route in routes)
+                        transportation_fee = int(total_distance * RATE_PER_KM)  # 切り捨て
+                        data.append({
+                            'name': current_name,
+                            'date': date,
+                            'routes': routes,
+                            'total_distance': total_distance,
+                            'transportation_fee': transportation_fee,
+                            'allowance': DAILY_ALLOWANCE,  # 1日1回のみ
+                            'total': transportation_fee + DAILY_ALLOWANCE
+                        })
+                    daily_routes = {}
+                
                 current_name = line.replace('様', '').strip()
                 continue
-                
+            
             parts = line.split()
             if len(parts) >= 2 and current_name:
                 date = parts[0]
@@ -90,22 +109,33 @@ def parse_expense_data(text):
                 route_points = route.split('→')
                 distance = (len(route_points) - 1) * 5.0
                 
-                transportation_fee = distance * RATE_PER_KM
-                allowance = DAILY_ALLOWANCE
-                total = transportation_fee + allowance
-                
+                if date not in daily_routes:
+                    daily_routes[date] = []
+                daily_routes[date].append({
+                    'route': route,
+                    'distance': distance
+                })
+        
+        # 最後の担当者のデータを処理
+        if current_name and daily_routes:
+            for date, routes in daily_routes.items():
+                total_distance = sum(route['distance'] for route in routes)
+                transportation_fee = int(total_distance * RATE_PER_KM)  # 切り捨て
                 data.append({
                     'name': current_name,
                     'date': date,
-                    'route': route,
-                    'total_distance': distance,
+                    'routes': routes,
+                    'total_distance': total_distance,
                     'transportation_fee': transportation_fee,
-                    'allowance': allowance,
-                    'total': total
+                    'allowance': DAILY_ALLOWANCE,
+                    'total': transportation_fee + DAILY_ALLOWANCE
                 })
         
         if data:
-            return pd.DataFrame(data)
+            df = pd.DataFrame(data)
+            df = df.sort_values(['name', 'date'])  # 日付順にソート
+            return df
+        
         st.error("データが見つかりませんでした。正しい形式で入力してください。")
         return None
         
@@ -129,71 +159,58 @@ def main():
     # データ表示と精算書生成
     if 'expense_data' in st.session_state:
         df = st.session_state['expense_data']
-        
-        # 全体サマリーの表示
-        st.markdown("### 精算サマリー")
-        summary_df = df.groupby('name').agg({
-            'total_distance': 'sum',
-            'transportation_fee': 'sum',
-            'allowance': 'sum',
-            'total': 'sum'
-        }).reset_index()
-        
-        summary_df.columns = ['担当者', '総距離(km)', '総交通費(円)', '総手当(円)', '総合計(円)']
-        
-        # 全体の合計行を追加
-        total_row = pd.DataFrame([{
-            '担当者': '全体合計',
-            '総距離(km)': summary_df['総距離(km)'].sum(),
-            '総交通費(円)': summary_df['総交通費(円)'].sum(),
-            '総手当(円)': summary_df['総手当(円)'].sum(),
-            '総合計(円)': summary_df['総合計(円)'].sum()
-        }])
-        summary_df = pd.concat([summary_df, total_row])
-        
-        st.dataframe(
-            summary_df.style.format({
-                '総距離(km)': '{:.1f}',
-                '総交通費(円)': '{:,.0f}',
-                '総手当(円)': '{:,.0f}',
-                '総合計(円)': '{:,.0f}'
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
+        unique_names = df['name'].unique().tolist()
         
         # 個人別の詳細表示
-        st.markdown("### 個人別精算詳細")
-        unique_names = df['name'].unique().tolist()
         tabs = st.tabs(unique_names)
         
         for i, name in enumerate(unique_names):
             with tabs[i]:
                 person_data = df[df['name'] == name].copy()
                 
-                # データ表示
-                st.markdown(f"#### {name}様の精算データ")
+                # タイトル表示
+                st.markdown(f"### {name}様 2024年12月25日～2025年1月 社内通貨（交通費）清算額")
                 
-                display_df = person_data[['date', 'route', 'total_distance', 'transportation_fee', 'allowance', 'total']]
-                display_df.columns = ['日付', '経路', '距離(km)', '交通費(円)', '手当(円)', '合計(円)']
+                # データ表示用のリストを作成
+                display_rows = []
+                for _, row in person_data.iterrows():
+                    for route_data in row['routes']:
+                        display_rows.append({
+                            '日付': row['date'],
+                            '経路': route_data['route'],
+                            '合計距離(km)': row['total_distance'],
+                            '交通費（距離×15P）(円)': row['transportation_fee'],
+                            '運転手当(円)': row['allowance'],
+                            '合計(円)': row['total']
+                        })
+                
+                display_df = pd.DataFrame(display_rows)
                 
                 # 合計行を追加
-                totals = display_df.sum(numeric_only=True).to_frame().T
-                totals['日付'] = '合計'
-                totals['経路'] = ''
+                totals = pd.DataFrame([{
+                    '日付': '合計',
+                    '経路': '',
+                    '合計距離(km)': '',
+                    '交通費（距離×15P）(円)': '',
+                    '運転手当(円)': '',
+                    '合計(円)': person_data['total'].sum()
+                }])
                 display_df = pd.concat([display_df, totals])
                 
                 # データフレーム表示
                 st.dataframe(
                     display_df.style.format({
-                        '距離(km)': '{:.1f}',
-                        '交通費(円)': '{:,.0f}',
-                        '手当(円)': '{:,.0f}',
+                        '合計距離(km)': '{:.1f}',
+                        '交通費（距離×15P）(円)': '{:,.0f}',
+                        '運転手当(円)': '{:,.0f}',
                         '合計(円)': '{:,.0f}'
                     }),
                     use_container_width=True,
                     hide_index=True
                 )
+                
+                # 注釈表示
+                st.markdown("※2025年1月分給与にて清算しました。")
                 
                 # 画像生成とダウンロードボタン
                 img_bytes = create_expense_table_image(person_data, name)
